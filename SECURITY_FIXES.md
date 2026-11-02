@@ -48,15 +48,20 @@ with the same login session, leaking the session to all regions.
   immediately without any network probing.
 - Multi-region probing is opt-in only (pass `true` explicitly).
 
-## Fix 4 [MEDIUM]: One-way weight sync by default
+## Fix 4 [MEDIUM]: Weight sync bidirectional (explicit)
 
-**Problem:** `syncWeightBidirectional()` uploaded Health Connect weight back to
-Xiaomi cloud; README implied one-way sync.
+**Context:** `syncWeightBidirectional()` syncs weight both ways. The README implied
+one-way sync, which was misleading.
+
+**Decision (fei):** Keep bidirectional ON by default. Reason: Xiaomi has no native
+weight data source — weight data originates from Health Connect (e.g. smart scale
+via Health Connect), so one-way (Mi→HC) would leave the Xiaomi side with no weight
+data ever.
 
 **Fix:**
-- Function signature: `syncWeightBidirectional(allowUploadToMi: Boolean = false)`.
-- Default behavior is now ONE-WAY (Mi → Health Connect only).
-- Bidirectional requires explicit opt-in.
+- Function signature: `syncWeightBidirectional(allowUploadToMi: Boolean = true)`.
+- Default is bidirectional; pass `false` explicitly to restrict to one-way.
+- README/behavior is now documented as bidirectional (no longer misleading).
 
 ## Fix 5 [LOW]: Redirect host whitelist
 
