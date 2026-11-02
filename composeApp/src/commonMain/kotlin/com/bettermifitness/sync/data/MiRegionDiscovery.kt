@@ -13,10 +13,28 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Probes all Mi health regions and picks the shard with the newest fitness samples.
+ * Probes Mi health regions and picks the shard with the newest fitness samples.
+ *
+ * SECURITY: By default, region is locked to "cn" (China) and no cross-region
+ * probing occurs. The original behavior probed cn/sg/us/de/ru/i2 concurrently
+ * with the same login session, leaking the session to all regions.
+ * Set [allowMultiRegionProbe] = true only if the user explicitly opts in.
  */
 class MiRegionDiscovery {
-    suspend fun discover(credentials: MiCredentials): MiRegion.DiscoveryResult {
+    suspend fun discover(
+        credentials: MiCredentials,
+        allowMultiRegionProbe: Boolean = false,
+    ): MiRegion.DiscoveryResult {
+        // Locked to cn by default; skip probing entirely
+        if (!allowMultiRegionProbe) {
+            val cn = MiRegion.normalizeCode("cn")
+            return MiRegion.DiscoveryResult(
+                region = cn,
+                source = MiRegion.DiscoverySource.Default,
+                latestEpochSec = null,
+            )
+        }
+        // Opt-in multi-region probing (original behavior)
         val loginHint = credentials.region.takeIf { it.isNotBlank() }
         val probes = coroutineScope {
             MiRegion.ALL_REGIONS.map { region ->
