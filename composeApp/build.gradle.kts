@@ -102,6 +102,7 @@ kotlin {
             implementation(libs.health.connect)
             implementation(libs.androidx.work.runtime)
             implementation(libs.androidx.lifecycle.process)
+            implementation(libs.androidx.security.crypto)
         }
 
         iosMain.dependencies {
