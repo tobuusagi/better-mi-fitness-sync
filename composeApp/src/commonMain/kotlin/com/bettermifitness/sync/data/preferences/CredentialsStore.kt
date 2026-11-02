@@ -10,15 +10,22 @@ import com.mifitness.miclient.auth.PassportAuthUtils
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
  * Persisted Mi Account credentials and session identity (SRP: auth storage only).
+ *
+ * Sensitive session secrets (serviceToken, ssecurity, passToken) are stored in
+ * platform-secure storage (Android Keystore / iOS Keychain) via [secureStorage].
+ * Non-sensitive metadata (user ID, region, device ID) stays in plain DataStore.
  */
 class CredentialsStore(
     private val dataStore: DataStore<Preferences>,
+    private val secureStorage: SecureTokenStorage,
 ) : CredentialsPort {
-    override val token: Flow<String?> = dataStore.data.map { it[TOKEN_KEY] }
+    // Sensitive: read from platform-secure storage (one-shot; callers use .first())
+    override val token: Flow<String?> = flow { emit(secureStorage.get(SECURE_TOKEN_KEY)) }
 
     val miUserId: Flow<String?> = dataStore.data.map { it[MI_USER_ID_KEY] }
 
@@ -36,15 +43,17 @@ class CredentialsStore(
         dataStore.data.map { it[REGION_LATEST_EPOCH_KEY] }
 
     override suspend fun saveCredentials(credentials: MiCredentials) {
+        // Sensitive tokens -> platform-secure storage (Keystore/Keychain)
+        secureStorage.put(SECURE_TOKEN_KEY, credentials.serviceToken)
+        secureStorage.put(SECURE_SSECURITY_KEY, credentials.ssecurity)
+        secureStorage.put(SECURE_PASS_TOKEN_KEY, credentials.passToken)
+        // Non-sensitive metadata -> plain DataStore
         dataStore.edit { preferences ->
             // Every persist is either a fresh login or a completed passport refresh, i.e. the
             // moment Xiaomi last rotated our passToken. Stamped so the sync policy can roll
             // the session forward before the server retires the token we now hold.
             preferences[SESSION_REFRESHED_AT_KEY] = Clock.System.now().epochSeconds.toString()
-            preferences[TOKEN_KEY] = credentials.serviceToken
             preferences[MI_USER_ID_KEY] = credentials.userId
-            preferences[SSECURITY_KEY] = credentials.ssecurity
-            preferences[PASS_TOKEN_KEY] = credentials.passToken
             // Device identity is stable across logins; never blank it from legacy creds.
             if (credentials.deviceId.isNotBlank()) {
                 preferences[DEVICE_ID_KEY] = credentials.deviceId
@@ -64,16 +73,20 @@ class CredentialsStore(
             }
             // Drop legacy manual mode key if present
             preferences.remove(REGION_MODE_KEY)
+            // Remove legacy plaintext tokens if migrating from older version
+            preferences.remove(TOKEN_KEY)
+            preferences.remove(SSECURITY_KEY)
+            preferences.remove(PASS_TOKEN_KEY)
         }
     }
 
     override suspend fun loadCredentials(): MiCredentials? {
-        val prefs = dataStore.data.first()
-        val serviceToken = prefs[TOKEN_KEY] ?: return null
-        val userId = prefs[MI_USER_ID_KEY] ?: return null
-        val ssecurity = prefs[SSECURITY_KEY] ?: return null
+        val serviceToken = secureStorage.get(SECURE_TOKEN_KEY) ?: return null
+        val ssecurity = secureStorage.get(SECURE_SSECURITY_KEY) ?: return null
         // passToken may be blank on legacy installs; still load for in-memory API until re-login.
-        val passToken = prefs[PASS_TOKEN_KEY] ?: ""
+        val passToken = secureStorage.get(SECURE_PASS_TOKEN_KEY) ?: ""
+        val prefs = dataStore.data.first()
+        val userId = prefs[MI_USER_ID_KEY] ?: return null
         val deviceId = prefs[DEVICE_ID_KEY] ?: ""
         val cUserId = prefs[C_USER_ID_KEY] ?: ""
         val effective = MiRegion.normalizeCode(
@@ -137,23 +150,34 @@ class CredentialsStore(
 
     /** Clears session credentials but keeps the stable device identity. */
     suspend fun clearCredentials() {
+        secureStorage.remove(SECURE_TOKEN_KEY)
+        secureStorage.remove(SECURE_SSECURITY_KEY)
+        secureStorage.remove(SECURE_PASS_TOKEN_KEY)
         dataStore.edit { preferences ->
-            preferences.remove(TOKEN_KEY)
             preferences.remove(MI_USER_ID_KEY)
             preferences.remove(REGION_KEY)
             preferences.remove(REGION_MODE_KEY)
             preferences.remove(LOGIN_REGION_KEY)
             preferences.remove(REGION_DISCOVERY_SOURCE_KEY)
             preferences.remove(REGION_LATEST_EPOCH_KEY)
-            preferences.remove(SSECURITY_KEY)
-            preferences.remove(PASS_TOKEN_KEY)
             preferences.remove(C_USER_ID_KEY)
             preferences.remove(SESSION_REFRESHED_AT_KEY)
+            // Legacy plaintext keys (in case of partial migration)
+            preferences.remove(TOKEN_KEY)
+            preferences.remove(SSECURITY_KEY)
+            preferences.remove(PASS_TOKEN_KEY)
         }
     }
 
     companion object {
+        // Legacy DataStore keys (kept for migration cleanup; values now in SecureTokenStorage)
         private val TOKEN_KEY = stringPreferencesKey("bearer_token")
+        private val SSECURITY_KEY = stringPreferencesKey("ssecurity")
+        private val PASS_TOKEN_KEY = stringPreferencesKey("pass_token")
+        // Secure storage keys (Android Keystore / iOS Keychain)
+        private const val SECURE_TOKEN_KEY = "secure_bearer_token"
+        private const val SECURE_SSECURITY_KEY = "secure_ssecurity"
+        private const val SECURE_PASS_TOKEN_KEY = "secure_pass_token"
         private val MI_USER_ID_KEY = stringPreferencesKey("mi_user_id")
         private val REGION_KEY = stringPreferencesKey("region")
         private val REGION_MODE_KEY = stringPreferencesKey("region_mode") // legacy
