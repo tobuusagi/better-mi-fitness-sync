@@ -1035,7 +1035,18 @@ class MiAuth(
             if (redirectUrl.isNullOrEmpty() || response.status.value !in 300..399) {
                 return@repeat
             }
-            currentUrl = PassportAuthUtils.absUrl(redirectUrl)
+            // SECURITY: Validate redirect host against Xiaomi domain whitelist
+            // to prevent open-redirect credential leakage.
+            val resolvedUrl = PassportAuthUtils.absUrl(redirectUrl)
+            val redirectHost = try { Url(resolvedUrl).host.lowercase() } catch (_: Exception) { "" }
+            val trusted = redirectHost.endsWith(".xiaomi.com") ||
+                redirectHost.endsWith(".mi.com") ||
+                redirectHost == "xiaomi.com" ||
+                redirectHost == "mi.com"
+            if (!trusted) {
+                throw MiAuthException("Untrusted redirect host: $redirectHost")
+            }
+            currentUrl = resolvedUrl
         }
         return serviceToken to region
     }
