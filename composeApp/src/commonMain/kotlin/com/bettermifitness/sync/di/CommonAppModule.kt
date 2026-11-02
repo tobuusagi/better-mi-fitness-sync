@@ -30,7 +30,8 @@ import org.koin.dsl.module
  * Platform-only factories (DataStore path, HealthWriter instance) live in [platformModule].
  */
 fun commonAppModule(): Module = module {
-    single { CredentialsStore(get()) }
+    single { SecureTokenStorage() }
+    single { CredentialsStore(get(), get()) }
     single<CredentialsPort> { get<CredentialsStore>() }
     single { SyncPreferences(get()) }
     single<SyncPreferencesPort> { get<SyncPreferences>() }
