@@ -442,19 +442,18 @@ class HealthRepository(
     }
 
     /**
-     * Weight sync. SECURITY: Defaults to ONE-WAY (Mi -> Health Connect).
-     * The original bidirectional behavior uploaded Health Connect weight back to
-     * Xiaomi cloud, which the README did not disclose. Set [allowUploadToMi] = true
-     * only if the user explicitly opts in to bidirectional sync.
+     * Weight sync. Bidirectional by default: Xiaomi has no native weight data source,
+     * so weight must flow Health Connect -> Mi to be visible on the Xiaomi side.
+     * Set [allowUploadToMi] = false to restrict to one-way (Mi -> Health Connect).
      */
-    private suspend fun syncWeightBidirectional(allowUploadToMi: Boolean = false) {
+    private suspend fun syncWeightBidirectional(allowUploadToMi: Boolean = true) {
         runMetric("weight") {
             val miLatest = getMiLatestWeight()
             val hcLatest = try { healthWriter.readLatestWeight() } catch (_: Exception) { null }
             // Both empty
             if (miLatest == null && hcLatest == null) return@runMetric 0
 
-            // One-way mode (default): only Mi -> HC, never upload back
+            // One-way mode (opt-out): only Mi -> HC, never upload back
             if (!allowUploadToMi) {
                 if (miLatest != null) {
                     healthWriter.writeWeight(listOf(miLatest))
