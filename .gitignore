@@ -58,3 +58,8 @@ detekt-baseline*.xml
 
 # Local API capture / binary GPS research (may contain personal health data)
 research/
+
+# Release signing - NEVER commit real keys
+*.keystore
+*.jks
+androidApp/keystore.properties
