@@ -40,23 +40,39 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // Release variant for tagged GitHub releases; PR builds stay on debug.
-    // Signed with the committed debug keystore below (public debug credentials,
-    // stable across CI runners) so updates install without uninstall; the release
-    // build type still applies the real release flags (non-debuggable)
-    // so public downloads never ship a debuggable APK.
+    // Release signing: NEVER commit a keystore. Provide your own via ONE of:
+    //   1. keystore.properties in androidApp/ (gitignored):
+    //        storeFile=/path/to/release.keystore
+    //        storePassword=...
+    //        keyAlias=...
+    //        keyPassword=...
+    //   2. Env vars: KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+    // If none is provided, the release build stays unsigned (CI must inject secrets).
+    val keystorePropsFile = rootProject.file("androidApp/keystore.properties")
+    val keystoreProps = java.util.Properties()
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use { keystoreProps.load(it) }
+    }
+    fun prop(name: String, env: String): String? =
+        keystoreProps.getProperty(name) ?: System.getenv(env)
+
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("release") {
+            val storePath = prop("storeFile", "KEYSTORE_FILE")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = prop("storePassword", "KEYSTORE_PASSWORD")
+                keyAlias = prop("keyAlias", "KEY_ALIAS")
+                keyPassword = prop("keyPassword", "KEY_PASSWORD")
+            }
+            // If storePath is blank the config stays empty and Gradle will
+            // fail with a clear error instead of silently signing with a debug key.
         }
     }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
