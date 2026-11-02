@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.Flow
  */
 class TokenStore(
     private val dataStore: DataStore<Preferences>,
-    val credentials: CredentialsStore = CredentialsStore(dataStore),
+    private val secureTokenStorage: SecureTokenStorage,
+    val credentials: CredentialsStore = CredentialsStore(dataStore, secureTokenStorage),
     val sync: SyncPreferences = SyncPreferences(dataStore),
 ) {
     val token: Flow<String?> get() = credentials.token
